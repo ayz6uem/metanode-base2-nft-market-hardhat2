@@ -31,7 +31,7 @@ describe("MyAuctionUpgrade", function () {
 
     // Deploy MyAuctionFactory contract
     MyAuctionFactory = await ethers.getContractFactory("MyAuctionFactory");
-    myAuctionFactory = await upgrades.deployProxy(MyAuctionFactory, [getAddr(myAuction)], { initializer: 'initialize', kind: 'uups' });
+    myAuctionFactory = await upgrades.deployProxy(MyAuctionFactory, [getAddr(seller), "0x0000000000000000000000000000000000000000", getAddr(myAuction)], { initializer: 'initialize', kind: 'uups' });
 
     // Mint token to seller
     await myToken.connect(seller).mint(seller.address);
@@ -47,7 +47,7 @@ describe("MyAuctionUpgrade", function () {
         const tx = await myAuctionFactory.connect(seller).createAuction(STARTING_PRICE,ONE_DAY,getAddr(myToken),1);
         await tx.wait();  // Wait for the transaction to be mined
         const auctionAddress = await myAuctionFactory.getAuction(1);  // Get the auction address from the factory
-        myAuction = await myAuctionV2.attach(auctionAddress);
+        myAuction = myAuctionV2.attach(auctionAddress);
         const name = await myAuction.name();
 
         expect(name).to.equal("poly auctioning");

@@ -9,26 +9,47 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "./MyAuction.sol";
 
+/**
+ * @title 拍卖工厂
+ * @author 
+ * @notice 
+ */
 contract MyAuctionFactory is ERC721Holder, Initializable, UUPSUpgradeable, OwnableUpgradeable {
 
+    //拍卖数据
     address[] public auctions;
+    //拍卖计数
     uint256 public auctionCount;
+    //拍卖合约实现地址
     address public auctionImplementation;
+    //预言机价格提供者
+    address public priceProvider;
+    //手续费地址
+    address public feeAddress;
     
-    function initialize(address _implementation) public initializer{
+    function initialize(address _feeAddress, address _priceProvider, address _implementation) public initializer{
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
+        feeAddress = _feeAddress;
+        priceProvider = _priceProvider;
         auctionImplementation = _implementation;
         auctionCount = 0;
     }
 
     function setAuctionImplementation(address _implementation) external onlyOwner {
         auctionImplementation = _implementation;
+        // TODO 是否把历史的都升级？
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-    // 创建拍卖
+    /**
+     * 创建拍卖
+     * @param startingPrice 起拍价格
+     * @param duration 拍卖时长
+     * @param collectionAddress 拍卖品地址
+     * @param collectionId 拍卖品ID
+     */
     function createAuction(
         uint256 startingPrice,
         uint256 duration,
@@ -37,7 +58,7 @@ contract MyAuctionFactory is ERC721Holder, Initializable, UUPSUpgradeable, Ownab
     ) public returns (address) {
         auctionCount++;
 
-        bytes memory data = abi.encodeWithSelector(MyAuction.initialize.selector, auctionCount, msg.sender, startingPrice, duration, collectionAddress, collectionId);
+        bytes memory data = abi.encodeWithSelector(MyAuction.initialize.selector, feeAddress, priceProvider, auctionCount, msg.sender, startingPrice, duration, collectionAddress, collectionId);
         ERC1967Proxy proxy = new ERC1967Proxy(auctionImplementation, data);
         address myAuctionAddress = address(proxy);
 
@@ -45,10 +66,16 @@ contract MyAuctionFactory is ERC721Holder, Initializable, UUPSUpgradeable, Ownab
         return myAuctionAddress;
     }
 
+    /**
+     * 获取所有拍卖信息
+     */
     function getAuctions() public view returns (address[] memory) {
         return auctions;
     }
 
+    /**
+     * 获取单场拍卖信息
+     */
     function getAuction(uint256 auctionId) public view returns (address) {
         require(auctionId > 0 && auctionId <= auctions.length, "Index out of bounds");
         return auctions[auctionId - 1];

@@ -9,8 +9,11 @@ const toHex = (value) => (ethers.toBeHex ? ethers.toBeHex(value) : ethers.utils.
 const getAddr = (c) => (typeof c === 'string' ? c : (c?.address ?? c?.target));
 
 describe("MyAuction", function () {
+  let MockV3Aggregator;
+  let PriceProvider, priceProvider;
   let MyAuction, myAuction;
   let MyToken, myToken;
+  let MyMoney, myMoney;
   let MyAuctionFactory, myAuctionFactory;
   let seller, bidder1, bidder2;
   const ONE_DAY = 24 * 60 * 60; // 1 day in seconds
@@ -20,7 +23,26 @@ describe("MyAuction", function () {
   const INITIAL_BALANCE = parseEther("10");
 
   beforeEach(async function () {
+    PriceProvider = await ethers.getContractFactory("PriceProvider");
+    priceProvider = await PriceProvider.deploy();
+    await priceProvider.waitForDeployment();
+
+    MockV3Aggregator = await ethers.getContractFactory("MockV3Aggregator");
+    let mockEthUsd = await MockV3Aggregator.deploy(10, "ETH/USD", 4000);
+    await mockEthUsd.waitForDeployment();
+    priceProvider.putPriceData("0x0000000000000000000000000000000000000000", getAddr(mockEthUsd));
+
+
     [seller, bidder1, bidder2] = await ethers.getSigners();
+
+    MyMoney = await ethers.getContractFactory("MyMoney");
+    myMoney = await MyMoney.deploy();
+    await myMoney.waitForDeployment();
+    
+    MockV3Aggregator = await ethers.getContractFactory("MockV3Aggregator");
+    let mockMmoUsd = await MockV3Aggregator.deploy(11, "MMO/USD", 3000);
+    await mockMmoUsd.waitForDeployment();
+    priceProvider.putPriceData(getAddr(myMoney), getAddr(mockMmoUsd));
 
     // Deploy MyToken contract
     MyToken = await ethers.getContractFactory("MyToken");
@@ -34,7 +56,7 @@ describe("MyAuction", function () {
 
     // Deploy MyAuctionFactory contract
     MyAuctionFactory = await ethers.getContractFactory("MyAuctionFactory");
-    myAuctionFactory = await upgrades.deployProxy(MyAuctionFactory, [getAddr(myAuction)], { initializer: 'initialize', kind: 'uups' });
+    myAuctionFactory = await upgrades.deployProxy(MyAuctionFactory, [getAddr(seller), getAddr(priceProvider), getAddr(myAuction)], { initializer: 'initialize', kind: 'uups' });
 
     // Mint token to seller
     await myToken.connect(seller).mint(seller.address);
@@ -115,7 +137,7 @@ describe("MyAuction", function () {
     });
 
     it("should accept valid bid", async function () {
-      await myAuction.connect(bidder1).bid({ value: FIRST_BID });
+      await myAuction.connect(bidder1).bid("0x0000000000000000000000000000000000000000", FIRST_BID, { value: FIRST_BID });
 
       const auctionState = await myAuction.info();
       expect(auctionState.highestBid).to.equal(FIRST_BID);
@@ -123,8 +145,8 @@ describe("MyAuction", function () {
     });
 
     it("should accept higher bid", async function () {
-      await myAuction.connect(bidder1).bid({ value: FIRST_BID });
-      await myAuction.connect(bidder2).bid({ value: SECOND_BID });
+      await myAuction.connect(bidder1).bid("0x0000000000000000000000000000000000000000", FIRST_BID, { value: FIRST_BID });
+      await myAuction.connect(bidder2).bid("0x0000000000000000000000000000000000000000", SECOND_BID, { value: SECOND_BID });
 
       const auctionState = await myAuction.info();
       expect(auctionState.highestBid).to.equal(SECOND_BID);
@@ -132,16 +154,40 @@ describe("MyAuction", function () {
     });
 
     it("should reject bid lower than current highest", async function () {
-      await myAuction.connect(bidder1).bid({ value: FIRST_BID });
+      await myAuction.connect(bidder1).bid("0x0000000000000000000000000000000000000000", FIRST_BID, { value: FIRST_BID });
       await expect(
-        myAuction.connect(bidder2).bid({ value: STARTING_PRICE })
+        myAuction.connect(bidder2).bid("0x0000000000000000000000000000000000000000", STARTING_PRICE, { value: STARTING_PRICE })
       ).to.be.revertedWith("Bid too low");
     });
 
     it("should not allow seller to bid", async function () {
       await expect(
-        myAuction.connect(seller).bid({ value: FIRST_BID })
+        myAuction.connect(seller).bid("0x0000000000000000000000000000000000000000", FIRST_BID, { value: FIRST_BID })
       ).to.be.revertedWith("Seller cannot bid on their own auction");
+    });
+
+    it("should highestBid is ETH", async function () {
+      await myMoney.mintMoney(bidder1, parseEther("3"));
+      await myMoney.connect(bidder1).approve(getAddr(myAuction), parseEther("3"));
+
+      await myAuction.connect(bidder1).bid(getAddr(myMoney), parseEther("3"));
+      await myAuction.connect(bidder2).bid("0x0000000000000000000000000000000000000000", parseEther("3"), { value: parseEther("3") });
+
+      const auctionState = await myAuction.info();
+      expect(auctionState.highestBid).to.equal(parseEther("3"));
+      expect(auctionState.highestBidder).to.equal(bidder2.address);
+    });
+
+    it("should highestBid is MMO", async function () {
+      await myAuction.connect(bidder2).bid("0x0000000000000000000000000000000000000000", parseEther("3"), { value: parseEther("3") });
+
+      await myMoney.mintMoney(bidder1, parseEther("5"));
+      await myMoney.connect(bidder1).approve(getAddr(myAuction), parseEther("5"));
+      await myAuction.connect(bidder1).bid(getAddr(myMoney), parseEther("5"));
+
+      const auctionState = await myAuction.info();
+      expect(auctionState.highestBid).to.equal(parseEther("5"));
+      expect(auctionState.highestBidder).to.equal(bidder1.address);
     });
   });
 
@@ -175,7 +221,7 @@ describe("MyAuction", function () {
       await time.increase(ONE_DAY + 1);
       await myAuction.connect(seller).endAuction();
       await expect(
-        myAuction.connect(bidder1).bid({ value: FIRST_BID })
+        myAuction.connect(bidder1).bid("0x0000000000000000000000000000000000000000", FIRST_BID, { value: FIRST_BID })
       ).to.be.revertedWith("Auction is not active");
     });
 
@@ -188,13 +234,31 @@ describe("MyAuction", function () {
     });
 
     it("should transfer NFT and funds correctly when auction ends with bids", async function () {
-      await myAuction.connect(bidder1).bid({ value: FIRST_BID });
-      await myAuction.connect(bidder2).bid({ value: SECOND_BID });
+      await myAuction.connect(bidder1).bid("0x0000000000000000000000000000000000000000", FIRST_BID, { value: FIRST_BID });
+      await myAuction.connect(bidder2).bid("0x0000000000000000000000000000000000000000", SECOND_BID, { value: SECOND_BID });
 
       await time.increase(ONE_DAY + 1);
       await myAuction.connect(seller).endAuction();
 
       expect(await myToken.ownerOf(1)).to.equal(getAddr(bidder2));
+    });
+
+    it("should transfer NFT and funds correctly when auction ends with bids MMO", async function () {
+      console.log("bidder2 balance:", await ethers.provider.getBalance(bidder2));
+      await myAuction.connect(bidder2).bid("0x0000000000000000000000000000000000000000", parseEther("3"), { value: parseEther("3") });
+      console.log("bidder2 balance:", await ethers.provider.getBalance(bidder2));
+
+      await myMoney.mintMoney(bidder1, parseEther("5"));
+      await myMoney.connect(bidder1).approve(getAddr(myAuction), parseEther("5"));
+      await myAuction.connect(bidder1).bid(getAddr(myMoney), parseEther("5"));
+
+      await time.increase(ONE_DAY + 1);
+      await myAuction.connect(seller).endAuction();
+
+      const sellerBalance = await myMoney.balanceOf(seller);
+      console.log("sellerBalance:", sellerBalance);
+      console.log("bidder2 balance:", await ethers.provider.getBalance(bidder2));
+      expect(await myToken.ownerOf(1)).to.equal(getAddr(bidder1));
     });
   });
 });

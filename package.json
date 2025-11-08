@@ -8,7 +8,9 @@
     "hardhat-deploy": "^1.0.4"
   },
   "dependencies": {
+    "@chainlink/contracts": "^1.5.0",
     "@openzeppelin/contracts": "^5.4.0",
-    "@openzeppelin/contracts-upgradeable": "^5.4.0"
+    "@openzeppelin/contracts-upgradeable": "^5.4.0",
+    "dotenv": "^17.2.3"
   }
 }

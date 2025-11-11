@@ -8,5 +8,14 @@ describe("test price", function(){
         await mock.waitForDeployment();
         let data = await mock.latestRoundData();
         console.log("price:", data.answer);
+
+        let baseRate = 600;
+        let k = 100000;
+
+        console.log("price when v=100000:", (baseRate * k) / (k + 100000) * 100000 / baseRate);
+        console.log("price when v=100000:", (baseRate * k) / (k + 10000) * 10000 / baseRate);
+        console.log("price when v=100000:", (baseRate * k) / (k + 1000000) * 1000000 / baseRate);
+        console.log("price when v=100000:", (baseRate * k) / (k + 100000000) * 100000000 / baseRate);
+
     });
 });

@@ -6,10 +6,11 @@ const parseEther = ethers.parseEther ?? ethers.utils.parseEther;
 const getAddr = (c) => (typeof c === 'string' ? c : (c?.address ?? c?.target));
 
 describe("MyAuctionUpgrade", function () {
-  let MyAuction, myAuction;
+  let MyAuction, myAuction, myAuctionV2;
   let MyToken, myToken;
   let MyAuctionFactory, myAuctionFactory;
   let seller, bidder1, bidder2;
+  let beacon;
   const ONE_DAY = 24 * 60 * 60; // 1 day in seconds
   const STARTING_PRICE = parseEther("0.001");
   const FIRST_BID = parseEther("0.002");
@@ -26,12 +27,12 @@ describe("MyAuctionUpgrade", function () {
 
     // Deploy MyAuction contract
     MyAuction = await ethers.getContractFactory("MyAuction");
-    myAuction = await MyAuction.deploy();
-    await myAuction.waitForDeployment();
+    beacon = await upgrades.deployBeacon(MyAuction);
+    await beacon.waitForDeployment();
 
     // Deploy MyAuctionFactory contract
     MyAuctionFactory = await ethers.getContractFactory("MyAuctionFactory");
-    myAuctionFactory = await upgrades.deployProxy(MyAuctionFactory, [getAddr(seller), "0x0000000000000000000000000000000000000000", getAddr(myAuction)], { initializer: 'initialize', kind: 'uups' });
+    myAuctionFactory = await upgrades.deployProxy(MyAuctionFactory, [getAddr(seller), "0x0000000000000000000000000000000000000000", getAddr(beacon)], { initializer: 'initialize', kind: 'uups' });
 
     // Mint token to seller
     await myToken.connect(seller).mint(seller.address);
@@ -39,18 +40,35 @@ describe("MyAuctionUpgrade", function () {
 
   describe("Auction Upgrade", function () {
     it("should create auction correctly", async function () {
+        const tx1 = await myAuctionFactory.connect(seller).createAuction(STARTING_PRICE,ONE_DAY,getAddr(myToken),1);
+        await tx1.wait();  // Wait for the transaction to be mined
+        const tx2 = await myAuctionFactory.connect(seller).createAuction(STARTING_PRICE,ONE_DAY,getAddr(myToken),2);
+        await tx2.wait();  // Wait for the transaction to be mined
+
+
         const MyAuctionV2 = await ethers.getContractFactory("MyAuctionV2");
-        const myAuctionV2 = await MyAuctionV2.deploy();
+        await upgrades.upgradeBeacon(getAddr(beacon), MyAuctionV2);
 
-        await myAuctionFactory.setAuctionImplementation(getAddr(myAuctionV2));
+        const auctionAddress1 = await myAuctionFactory.getAuction(1);  // Get the auction address from the factory
+        const myAuction1 = MyAuctionV2.attach(auctionAddress1);
+        await myAuction1.reinitializeV2("poly auctioning");
+        const name1 = await myAuction1.name();
+        expect(name1).to.equal("poly auctioning");
 
-        const tx = await myAuctionFactory.connect(seller).createAuction(STARTING_PRICE,ONE_DAY,getAddr(myToken),1);
-        await tx.wait();  // Wait for the transaction to be mined
-        const auctionAddress = await myAuctionFactory.getAuction(1);  // Get the auction address from the factory
-        myAuction = myAuctionV2.attach(auctionAddress);
-        const name = await myAuction.name();
+        const auctionAddress2 = await myAuctionFactory.getAuction(2);  // Get the auction address from the factory
+        const myAuction2 = MyAuctionV2.attach(auctionAddress2);
+        await myAuction2.reinitializeV2("poly auctioning");
+        const name2 = await myAuction2.name();
+        expect(name2).to.equal("poly auctioning");
 
-        expect(name).to.equal("poly auctioning");
+        const tx3 = await myAuctionFactory.connect(seller).createAuction(STARTING_PRICE,ONE_DAY,getAddr(myToken),2);
+        await tx3.wait();  // Wait for the transaction to be mined
+
+        const auctionAddress3 = await myAuctionFactory.getAuction(3);  // Get the auction address from the factory
+        const myAuction3 = MyAuctionV2.attach(auctionAddress3);
+        await myAuction3.reinitializeV2("poly auctioning");
+        const name3 = await myAuction3.name();
+        expect(name3).to.equal("poly auctioning");
     });
   });
   

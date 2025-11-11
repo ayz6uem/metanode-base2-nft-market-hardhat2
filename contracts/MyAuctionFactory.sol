@@ -3,6 +3,7 @@ pragma solidity ^0.8;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
+import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -20,25 +21,20 @@ contract MyAuctionFactory is ERC721Holder, Initializable, UUPSUpgradeable, Ownab
     address[] public auctions;
     //拍卖计数
     uint256 public auctionCount;
-    //拍卖合约实现地址
-    address public auctionImplementation;
+    //拍卖合约 beacon 地址
+    address public auctionBeacon;
     //预言机价格提供者
     address public priceProvider;
     //手续费地址
     address public feeAddress;
     
-    function initialize(address _feeAddress, address _priceProvider, address _implementation) public initializer{
+    function initialize(address _feeAddress, address _priceProvider, address _auctionBeacon) public initializer{
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
         feeAddress = _feeAddress;
         priceProvider = _priceProvider;
-        auctionImplementation = _implementation;
+        auctionBeacon = _auctionBeacon;
         auctionCount = 0;
-    }
-
-    function setAuctionImplementation(address _implementation) external onlyOwner {
-        auctionImplementation = _implementation;
-        // TODO 是否把历史的都升级？
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
@@ -59,7 +55,7 @@ contract MyAuctionFactory is ERC721Holder, Initializable, UUPSUpgradeable, Ownab
         auctionCount++;
 
         bytes memory data = abi.encodeWithSelector(MyAuction.initialize.selector, feeAddress, priceProvider, auctionCount, msg.sender, startingPrice, duration, collectionAddress, collectionId);
-        ERC1967Proxy proxy = new ERC1967Proxy(auctionImplementation, data);
+        BeaconProxy proxy = new BeaconProxy(auctionBeacon, data);
         address myAuctionAddress = address(proxy);
 
         auctions.push(myAuctionAddress);

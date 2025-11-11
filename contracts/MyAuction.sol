@@ -191,6 +191,6 @@ contract MyAuction is ERC721Holder, Initializable, UUPSUpgradeable, OwnableUpgra
      * @param v 成交金额 USD
      */
     function _usdFee(uint256 v) private view returns(uint256) {
-        return baseRate * k / (k + v) ;
+        return (baseRate * k / (k + v)) * v / k ;
     }
 }

@@ -51,12 +51,12 @@ describe("MyAuction", function () {
 
     // Deploy MyAuction contract
     MyAuction = await ethers.getContractFactory("MyAuction");
-    myAuction = await MyAuction.deploy();
-    await myAuction.waitForDeployment();
+    const beacon = await upgrades.deployBeacon(MyAuction);
+    await beacon.waitForDeployment();
 
     // Deploy MyAuctionFactory contract
     MyAuctionFactory = await ethers.getContractFactory("MyAuctionFactory");
-    myAuctionFactory = await upgrades.deployProxy(MyAuctionFactory, [getAddr(seller), getAddr(priceProvider), getAddr(myAuction)], { initializer: 'initialize', kind: 'uups' });
+    myAuctionFactory = await upgrades.deployProxy(MyAuctionFactory, [getAddr(seller), getAddr(priceProvider), getAddr(beacon)], { initializer: 'initialize', kind: 'uups' });
 
     // Mint token to seller
     await myToken.connect(seller).mint(seller.address);
